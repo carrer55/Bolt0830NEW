@@ -25,6 +25,7 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
       dailyAllowance: 0,
       transportation: 0,
       accommodation: 0,
+      preparationAllowance: 0,
       total: 0
     },
     attachments: [] as File[]
@@ -33,10 +34,16 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
   const [allowanceSettings, setAllowanceSettings] = useState({
     domestic_daily_allowance: 15000,
     overseas_daily_allowance: 25000,
-    transportation_daily_allowance: 6000,
-    accommodation_daily_allowance: 16000,
-    use_transportation_allowance: true,
-    use_accommodation_allowance: true
+    domestic_transportation_daily_allowance: 6000,
+    domestic_accommodation_daily_allowance: 16000,
+    overseas_transportation_daily_allowance: 8000,
+    overseas_accommodation_daily_allowance: 20000,
+    overseas_preparation_allowance: 5000,
+    domestic_use_transportation_allowance: true,
+    domestic_use_accommodation_allowance: true,
+    overseas_use_transportation_allowance: true,
+    overseas_use_accommodation_allowance: true,
+    overseas_use_preparation_allowance: true
   });
 
   const [dragActive, setDragActive] = useState(false);
@@ -70,10 +77,16 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
           setAllowanceSettings({
             domestic_daily_allowance: existingSettings.domestic_daily_allowance || 15000,
             overseas_daily_allowance: existingSettings.overseas_daily_allowance || 25000,
-            transportation_daily_allowance: existingSettings.transportation_daily_allowance || 6000,
-            accommodation_daily_allowance: existingSettings.accommodation_daily_allowance || 16000,
-            use_transportation_allowance: existingSettings.use_transportation_allowance ?? true,
-            use_accommodation_allowance: existingSettings.use_accommodation_allowance ?? true
+            domestic_transportation_daily_allowance: existingSettings.domestic_transportation_daily_allowance || 6000,
+            domestic_accommodation_daily_allowance: existingSettings.domestic_accommodation_daily_allowance || 16000,
+            overseas_transportation_daily_allowance: existingSettings.overseas_transportation_daily_allowance || 8000,
+            overseas_accommodation_daily_allowance: existingSettings.overseas_accommodation_daily_allowance || 20000,
+            overseas_preparation_allowance: existingSettings.overseas_preparation_allowance || 5000,
+            domestic_use_transportation_allowance: existingSettings.domestic_use_transportation_allowance ?? true,
+            domestic_use_accommodation_allowance: existingSettings.domestic_use_accommodation_allowance ?? true,
+            overseas_use_transportation_allowance: existingSettings.overseas_use_transportation_allowance ?? true,
+            overseas_use_accommodation_allowance: existingSettings.overseas_use_accommodation_allowance ?? true,
+            overseas_use_preparation_allowance: existingSettings.overseas_use_preparation_allowance ?? true
           });
         } else {
           console.log('No allowance settings found, using defaults');
@@ -97,17 +110,32 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
       const dailyRate = formData.isOverseas 
         ? allowanceSettings.overseas_daily_allowance 
         : allowanceSettings.domestic_daily_allowance;
-      const transportationRate = allowanceSettings.transportation_daily_allowance;
-      const accommodationRate = allowanceSettings.accommodation_daily_allowance;
+      // 国内/海外に応じて適切な日当設定を使用
+      const transportationRate = formData.isOverseas 
+        ? allowanceSettings.overseas_transportation_daily_allowance 
+        : allowanceSettings.domestic_transportation_daily_allowance;
+      const accommodationRate = formData.isOverseas 
+        ? allowanceSettings.overseas_accommodation_daily_allowance 
+        : allowanceSettings.domestic_accommodation_daily_allowance;
+      const useTransportation = formData.isOverseas 
+        ? allowanceSettings.overseas_use_transportation_allowance 
+        : allowanceSettings.domestic_use_transportation_allowance;
+      const useAccommodation = formData.isOverseas 
+        ? allowanceSettings.overseas_use_accommodation_allowance 
+        : allowanceSettings.domestic_use_accommodation_allowance;
 
       // 計算式：
       // 出張日当 = 日数 × 出張日当（国内/海外）
       // 交通費 = 日数 × 交通費日当（使用フラグがtrueの場合のみ）
       // 宿泊費 = (日数 - 1) × 宿泊日当（使用フラグがtrueで1泊以上の場合のみ）
+      // 海外出張の場合のみ支度料を追加
       const dailyAllowance = days * dailyRate;
-      const transportation = allowanceSettings.use_transportation_allowance ? days * transportationRate : 0;
-      const accommodation = (allowanceSettings.use_accommodation_allowance && days > 1) ? (days - 1) * accommodationRate : 0;
-      const total = dailyAllowance + transportation + accommodation;
+      const transportation = useTransportation ? days * transportationRate : 0;
+      const accommodation = (useAccommodation && days > 1) ? (days - 1) * accommodationRate : 0;
+      const preparationAllowance = formData.isOverseas && allowanceSettings.overseas_use_preparation_allowance 
+        ? allowanceSettings.overseas_preparation_allowance 
+        : 0;
+      const total = dailyAllowance + transportation + accommodation + preparationAllowance;
 
       setFormData(prev => ({
         ...prev,
@@ -115,6 +143,7 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
           dailyAllowance,
           transportation,
           accommodation,
+          preparationAllowance: preparationAllowance || 0,
           total
         }
       }));
@@ -395,29 +424,43 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
                       </p>
                     </div>
                     <div className={`bg-white/30 rounded-lg p-4 backdrop-blur-sm ${
-                      !allowanceSettings.use_transportation_allowance ? 'opacity-50' : ''
+                      !(formData.isOverseas ? allowanceSettings.overseas_use_transportation_allowance : allowanceSettings.domestic_use_transportation_allowance) ? 'opacity-50' : ''
                     }`}>
                       <p className="text-sm text-slate-600 mb-1">交通費</p>
                       <p className="text-2xl font-bold text-slate-800">¥{formData.estimatedExpenses.transportation.toLocaleString()}</p>
                       <p className="text-xs text-slate-500 mt-1">
-                        {allowanceSettings.use_transportation_allowance 
-                          ? `¥${allowanceSettings.transportation_daily_allowance}/日`
+                        {(formData.isOverseas ? allowanceSettings.overseas_use_transportation_allowance : allowanceSettings.domestic_use_transportation_allowance)
+                          ? `¥${formData.isOverseas ? allowanceSettings.overseas_transportation_daily_allowance : allowanceSettings.domestic_transportation_daily_allowance}/日`
                           : '使用しない（0円）'
                         }
                       </p>
                     </div>
                     <div className={`bg-white/30 rounded-lg p-4 backdrop-blur-sm ${
-                      !allowanceSettings.use_accommodation_allowance ? 'opacity-50' : ''
+                      !(formData.isOverseas ? allowanceSettings.overseas_use_accommodation_allowance : allowanceSettings.domestic_use_accommodation_allowance) ? 'opacity-50' : ''
                     }`}>
                       <p className="text-sm text-slate-600 mb-1">宿泊費</p>
                       <p className="text-2xl font-bold text-slate-800">¥{formData.estimatedExpenses.accommodation.toLocaleString()}</p>
                       <p className="text-xs text-slate-500 mt-1">
-                        {allowanceSettings.use_accommodation_allowance 
-                          ? `¥${allowanceSettings.accommodation_daily_allowance}/泊`
+                        {(formData.isOverseas ? allowanceSettings.overseas_use_accommodation_allowance : allowanceSettings.domestic_use_accommodation_allowance)
+                          ? `¥${formData.isOverseas ? allowanceSettings.overseas_accommodation_daily_allowance : allowanceSettings.domestic_accommodation_daily_allowance}/泊`
                           : '使用しない（0円）'
                         }
                       </p>
                     </div>
+                    {formData.isOverseas && (
+                      <div className={`bg-white/30 rounded-lg p-4 backdrop-blur-sm ${
+                        !allowanceSettings.overseas_use_preparation_allowance ? 'opacity-50' : ''
+                      }`}>
+                        <p className="text-sm text-slate-600 mb-1">支度料</p>
+                        <p className="text-2xl font-bold text-slate-800">¥{formData.estimatedExpenses.preparationAllowance.toLocaleString()}</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {allowanceSettings.overseas_use_preparation_allowance
+                            ? `¥${allowanceSettings.overseas_preparation_allowance}/回`
+                            : '使用しない（0円）'
+                          }
+                        </p>
+                      </div>
+                    )}
                     <div className="bg-gradient-to-r from-navy-600 to-navy-800 rounded-lg p-4 text-white">
                       <p className="text-sm text-navy-100 mb-1">合計</p>
                       <p className="text-2xl font-bold">¥{formData.estimatedExpenses.total.toLocaleString()}</p>
@@ -433,14 +476,20 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
                           <p>出張期間: {formData.startDate} 〜 {formData.endDate}</p>
                           <p>日数: {Math.ceil((new Date(formData.endDate).getTime() - new Date(formData.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1}日</p>
                           <p>出張日当: {formData.isOverseas ? '海外' : '国内'} ¥{formData.isOverseas ? allowanceSettings.overseas_daily_allowance : allowanceSettings.domestic_daily_allowance}/日</p>
-                          <p>交通費: {allowanceSettings.use_transportation_allowance 
-                            ? `¥${allowanceSettings.transportation_daily_allowance}/日`
+                          <p>交通費: {(formData.isOverseas ? allowanceSettings.overseas_use_transportation_allowance : allowanceSettings.domestic_use_transportation_allowance)
+                            ? `¥${formData.isOverseas ? allowanceSettings.overseas_transportation_daily_allowance : allowanceSettings.domestic_transportation_daily_allowance}/日`
                             : '使用しない（0円）'
                           }</p>
-                          <p>宿泊費: {allowanceSettings.use_accommodation_allowance 
-                            ? `¥${allowanceSettings.accommodation_daily_allowance}/泊`
+                          <p>宿泊費: {(formData.isOverseas ? allowanceSettings.overseas_use_accommodation_allowance : allowanceSettings.domestic_use_accommodation_allowance)
+                            ? `¥${formData.isOverseas ? allowanceSettings.overseas_accommodation_daily_allowance : allowanceSettings.domestic_accommodation_daily_allowance}/泊`
                             : '使用しない（0円）'
                           }</p>
+                          {formData.isOverseas && (
+                            <p>支度料: {allowanceSettings.overseas_use_preparation_allowance
+                              ? `¥${allowanceSettings.overseas_preparation_allowance}/回`
+                              : '使用しない（0円）'
+                            }</p>
+                          )}
                         </>
                       )}
                     </div>

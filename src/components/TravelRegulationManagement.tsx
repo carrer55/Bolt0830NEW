@@ -36,6 +36,9 @@ function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementPr
   const [regulations, setRegulations] = useState<RegulationWithPositions[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [selectedRegulation, setSelectedRegulation] = useState<RegulationWithPositions | null>(null);
+  const [regulationHistory, setRegulationHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
 
@@ -44,7 +47,7 @@ function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementPr
     if (user) {
       loadRegulations();
     }
-  }, []);
+  }, [user]);
 
   const loadRegulations = async () => {
     if (!user) return;
@@ -53,51 +56,67 @@ function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementPr
       setLoading(true);
       setError('');
       
-      // 出張規程とその役職別設定を取得
+      // 出張規程とその役職別設定を取得（改訂版管理対応）
       const { data: regulationsData, error: regulationsError } = await supabase
         .from('travel_expense_regulations')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('company_name', { ascending: true })
+        .order('revision_number', { ascending: true }); // 改訂版番号順にソート
 
       if (regulationsError) {
+        console.error('規程データ取得エラー:', regulationsError);
         throw regulationsError;
+      }
+
+      if (!regulationsData || regulationsData.length === 0) {
+        setRegulations([]);
+        setLoading(false);
+        return;
       }
 
       // 各規程の役職データを個別に取得
       const formattedRegulations: RegulationWithPositions[] = [];
       
-      for (const reg of regulationsData || []) {
-        // 役職データを取得
-        const { data: positionsData, error: positionsError } = await supabase
-          .from('regulation_positions')
-          .select('*')
-          .eq('regulation_id', reg.id);
+      for (const reg of regulationsData) {
+        try {
+          // 役職データを取得
+          const { data: positionsData, error: positionsError } = await supabase
+            .from('regulation_positions')
+            .select('*')
+            .eq('regulation_id', reg.id);
 
-        if (positionsError) {
-          console.error('役職データの取得エラー:', positionsError);
+          if (positionsError) {
+            console.error('役職データの取得エラー:', positionsError);
+          }
+
+          const formattedRegulation = {
+            id: reg.id,
+            regulation_name: reg.regulation_name || '',
+            company_name: reg.company_name || '',
+            company_address: reg.company_address || '',
+            representative: reg.representative || '',
+            distance_threshold: reg.distance_threshold || 50,
+            implementation_date: reg.implementation_date || '',
+            revision_number: reg.revision_number || 1,
+            status: reg.status || 'draft',
+            createdAt: reg.created_at || new Date().toISOString(),
+            updatedAt: reg.updated_at || new Date().toISOString(),
+            positions: (positionsData || []).map(pos => ({
+              position_name: pos.position_name || '',
+              domestic_daily_allowance: pos.domestic_daily_allowance || 0,
+              overseas_daily_allowance: pos.overseas_daily_allowance || 0
+            }))
+          };
+
+          formattedRegulations.push(formattedRegulation);
+        } catch (regError) {
+          console.error(`規程 ${reg.id} の処理エラー:`, regError);
+          // エラーが発生しても他の規程は処理を続行
         }
-
-        formattedRegulations.push({
-          id: reg.id,
-          regulation_name: reg.regulation_name,
-          company_name: reg.company_name || '',
-          company_address: reg.company_address || '',
-          representative: reg.representative || '',
-          distance_threshold: reg.distance_threshold || 50,
-          implementation_date: reg.implementation_date || '',
-          revision_number: reg.revision_number || 1,
-          status: reg.status || 'draft',
-          createdAt: reg.created_at,
-          updatedAt: reg.updated_at,
-          positions: (positionsData || []).map(pos => ({
-            position_name: pos.position_name,
-            domestic_daily_allowance: pos.domestic_daily_allowance || 0,
-            overseas_daily_allowance: pos.overseas_daily_allowance || 0
-          }))
-        });
       }
 
+      console.log('全規程データ:', formattedRegulations);
       setRegulations(formattedRegulations);
     } catch (err: any) {
       console.error('規程の読み込みエラー:', err);
@@ -111,10 +130,40 @@ function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementPr
     setIsSidebarOpen(!isSidebarOpen);
   };
 
+  // 規程を会社名でグループ化し、改訂版順にソート
+  const groupedRegulations = regulations.reduce((groups, regulation) => {
+    const companyName = regulation.company_name || '不明';
+    if (!groups[companyName]) {
+      groups[companyName] = [];
+    }
+    groups[companyName].push(regulation);
+    return groups;
+  }, {} as Record<string, RegulationWithPositions[]>);
+
+  // 各会社の改訂版を改訂版番号順にソート（1から順番に表示）
+  Object.keys(groupedRegulations).forEach(companyName => {
+    groupedRegulations[companyName].sort((a, b) => (a.revision_number || 1) - (b.revision_number || 1));
+  });
+
   const filteredRegulations = regulations.filter(regulation =>
     (regulation.company_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (regulation.regulation_name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // 検索結果も会社名でグループ化
+  const filteredGroupedRegulations = filteredRegulations.reduce((groups, regulation) => {
+    const companyName = regulation.company_name || '不明';
+    if (!groups[companyName]) {
+      groups[companyName] = [];
+    }
+    groups[companyName].push(regulation);
+    return groups;
+  }, {} as Record<string, RegulationWithPositions[]>);
+
+  // 検索結果の各会社の改訂版も改訂版番号順にソート（1から順番に表示）
+  Object.keys(filteredGroupedRegulations).forEach(companyName => {
+    filteredGroupedRegulations[companyName].sort((a, b) => (a.revision_number || 1) - (b.revision_number || 1));
+  });
 
   const handleDelete = async (id: string) => {
     if (confirm('この規程を削除してもよろしいですか？')) {
@@ -139,6 +188,59 @@ function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementPr
     // 編集対象のIDをローカルストレージに保存
     localStorage.setItem('editingRegulationId', id);
     onNavigate('travel-regulation-creation');
+  };
+
+  const handleShowHistory = async (regulation: RegulationWithPositions) => {
+    try {
+      setSelectedRegulation(regulation);
+      
+      // 改訂版履歴を取得（同じ会社名の全規程から）
+      const { data: companyRegulations, error: companyError } = await supabase
+        .from('travel_expense_regulations')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('company_name', regulation.company_name)
+        .order('revision_number', { ascending: true });
+      
+      if (companyError) {
+        console.error('会社規程取得エラー:', companyError);
+        setRegulationHistory([]);
+      } else if (companyRegulations && companyRegulations.length > 0) {
+        // 改訂版履歴として表示
+        const historyData = companyRegulations.map(reg => ({
+          id: reg.id,
+          version_number: reg.revision_number || 1,
+          version_name: reg.revision_number === 1 ? '初版' : `第${reg.revision_number}版`,
+          company_name: reg.company_name,
+          implementation_date: reg.implementation_date,
+          status: reg.status,
+          created_at: reg.created_at,
+          change_summary: reg.revision_number === 1 ? '初版作成' : `改訂版${reg.revision_number}として作成`
+        }));
+        
+        setRegulationHistory(historyData);
+      } else {
+        // データがない場合、現在の規程を履歴として表示
+        const historyData = [{
+          id: regulation.id,
+          version_number: regulation.revision_number,
+          version_name: `第${regulation.revision_number}版`,
+          company_name: regulation.company_name,
+          implementation_date: regulation.implementation_date,
+          status: regulation.status,
+          created_at: regulation.createdAt,
+          change_summary: '新規作成'
+        }];
+        
+        setRegulationHistory(historyData);
+      }
+      
+      setShowHistoryModal(true);
+    } catch (err) {
+      console.error('履歴表示エラー:', err);
+      setRegulationHistory([]);
+      setShowHistoryModal(true);
+    }
   };
 
   const handleExportPDF = async (regulation: RegulationWithPositions) => {
@@ -383,100 +485,156 @@ ${regulation.representative}`;
                   </div>
                 </div>
               ) : (
-                <div className="backdrop-blur-xl bg-white/20 rounded-xl border border-white/30 shadow-xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-white/30 border-b border-white/30">
-                        <tr>
-                          <th className="text-left py-4 px-6 font-medium text-slate-700">会社名</th>
-                          <th className="text-left py-4 px-6 font-medium text-slate-700">規程名</th>
-                          <th className="text-left py-4 px-6 font-medium text-slate-700">ステータス</th>
-                          <th className="text-left py-4 px-6 font-medium text-slate-700">作成日</th>
-                          <th className="text-left py-4 px-6 font-medium text-slate-700">更新日</th>
-                          <th className="text-left py-4 px-6 font-medium text-slate-700">日当設定</th>
-                          <th className="text-center py-4 px-6 font-medium text-slate-700">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredRegulations.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="text-center py-12 text-slate-500">
-                              {searchTerm ? '検索結果が見つかりません' : '規程が登録されていません'}
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredRegulations.map((regulation) => (
-                            <tr key={regulation.id} className="border-b border-white/20 hover:bg-white/20 transition-colors">
-                              <td className="py-4 px-6 text-slate-800 font-medium">{regulation.company_name}</td>
-                              <td className="py-4 px-6 text-slate-700">{regulation.regulation_name}</td>
-                              <td className="py-4 px-6">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(regulation.status)}`}>
-                                  {getStatusText(regulation.status)}
-                                </span>
-                              </td>
-                              <td className="py-4 px-6 text-slate-600 text-sm">
-                                {new Date(regulation.createdAt).toLocaleDateString('ja-JP')}
-                              </td>
-                              <td className="py-4 px-6 text-slate-600 text-sm">
-                                {new Date(regulation.updatedAt).toLocaleDateString('ja-JP')}
-                              </td>
-                              <td className="py-4 px-6 text-slate-600 text-sm">
-                                <div className="space-y-1">
-                                  {regulation.positions.length > 0 ? (
-                                    <>
-                                      <div>国内: ¥{regulation.positions[0]?.domestic_daily_allowance.toLocaleString()}</div>
-                                      <div>海外: ¥{regulation.positions[0]?.overseas_daily_allowance.toLocaleString()}</div>
-                                    </>
-                                  ) : (
-                                    <div className="text-slate-400">未設定</div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-4 px-6">
-                                <div className="flex items-center justify-center space-x-1">
-                                  <button
-                                    onClick={() => handleEdit(regulation.id)}
-                                    className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-colors"
-                                    title="編集"
+                <div className="space-y-6">
+                  {Object.keys(filteredGroupedRegulations).length === 0 ? (
+                    <div className="backdrop-blur-xl bg-white/20 rounded-xl border border-white/30 shadow-xl p-12">
+                      <div className="text-center">
+                        <p className="text-slate-500">
+                          {searchTerm ? '検索結果が見つかりません' : '規程が登録されていません'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    Object.entries(filteredGroupedRegulations).map(([companyName, companyRegulations]) => (
+                      <div key={companyName} className="backdrop-blur-xl bg-white/20 rounded-xl border border-white/30 shadow-xl overflow-hidden">
+                        {/* 会社名ヘッダー */}
+                        <div className="bg-white/30 border-b border-white/30 px-6 py-4">
+                          <h3 className="text-lg font-semibold text-slate-800">{companyName}</h3>
+                          <p className="text-sm text-slate-600 mt-1">
+                            改訂版数: {companyRegulations.length}件
+                          </p>
+                        </div>
+                        
+                        {/* 改訂版一覧テーブル */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-white/20 border-b border-white/30">
+                              <tr>
+                                <th className="text-left py-3 px-4 font-medium text-slate-700">改訂版</th>
+                                <th className="text-left py-3 px-4 font-medium text-slate-700">規程名</th>
+                                <th className="text-left py-3 px-4 font-medium text-slate-700">ステータス</th>
+                                <th className="text-left py-3 px-4 font-medium text-slate-700">実施日</th>
+                                <th className="text-left py-3 px-4 font-medium text-slate-700">作成日</th>
+                                <th className="text-left py-3 px-4 font-medium text-slate-700">更新日</th>
+                                <th className="text-left py-3 px-4 font-medium text-slate-700">日当設定</th>
+                                <th className="text-center py-3 px-4 font-medium text-slate-700">操作</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                                                             {companyRegulations.map((regulation, index) => {
+                                 console.log(`改訂版${regulation.revision_number}を表示中 (index: ${index})`);
+                                 const isLatest = regulation.revision_number === Math.max(...companyRegulations.map(r => r.revision_number || 1)); // 最新版は改訂版番号が最大のもの
+                                 const isFirstVersion = regulation.revision_number === 1;
+                                
+                                return (
+                                  <tr 
+                                    key={regulation.id} 
+                                    className={`border-b border-white/20 hover:bg-white/20 transition-colors ${
+                                      isLatest ? 'bg-blue-50/20' : isFirstVersion ? 'bg-green-50/20' : ''
+                                    }`}
                                   >
-                                    <Edit className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => onNavigate('travel-regulation-history')}
-                                    className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-colors"
-                                    title="履歴"
-                                  >
-                                    <History className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleExportPDF(regulation)}
-                                    className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50/30 rounded-lg transition-colors"
-                                    title="PDF出力"
-                                  >
-                                    <FileText className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleExportWord(regulation)}
-                                    className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50/30 rounded-lg transition-colors"
-                                    title="Word出力"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(regulation.id)}
-                                    className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50/30 rounded-lg transition-colors"
-                                    title="削除"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                                    <td className="py-3 px-4">
+                                      <div className="flex items-center space-x-2">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                          isLatest 
+                                            ? 'bg-blue-100 text-blue-800' 
+                                            : isFirstVersion
+                                            ? 'bg-green-100 text-green-800'
+                                            : 'bg-slate-100 text-slate-700'
+                                        }`}>
+                                          改訂版{regulation.revision_number}
+                                        </span>
+                                        {isLatest && (
+                                          <span className="text-xs text-blue-600 font-medium">最新</span>
+                                        )}
+                                        {isFirstVersion && (
+                                          <span className="text-xs text-green-600 font-medium">初版</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4 text-slate-700">
+                                      <div className="font-medium">{regulation.regulation_name}</div>
+                                      <div className="text-xs text-slate-500 mt-1">
+                                        距離基準: {regulation.distance_threshold}km以上
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(regulation.status)}`}>
+                                        {getStatusText(regulation.status)}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-4 text-slate-600 text-sm">
+                                      {regulation.implementation_date 
+                                        ? new Date(regulation.implementation_date).toLocaleDateString('ja-JP')
+                                        : '未設定'
+                                      }
+                                    </td>
+                                    <td className="py-3 px-4 text-slate-600 text-sm">
+                                      {new Date(regulation.createdAt).toLocaleDateString('ja-JP')}
+                                    </td>
+                                    <td className="py-3 px-4 text-slate-600 text-sm">
+                                      {new Date(regulation.updatedAt).toLocaleDateString('ja-JP')}
+                                    </td>
+                                    <td className="py-3 px-4 text-slate-600 text-sm">
+                                      <div className="space-y-1">
+                                        {regulation.positions.length > 0 ? (
+                                          <>
+                                            <div>国内: ¥{regulation.positions[0]?.domestic_daily_allowance.toLocaleString()}</div>
+                                            <div>海外: ¥{regulation.positions[0]?.overseas_daily_allowance.toLocaleString()}</div>
+                                          </>
+                                        ) : (
+                                          <div className="text-slate-400">未設定</div>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <div className="flex items-center justify-center space-x-1">
+                                        <button
+                                          onClick={() => handleEdit(regulation.id)}
+                                          className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-colors"
+                                          title="編集"
+                                        >
+                                          <Edit className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleShowHistory(regulation)}
+                                          className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-colors"
+                                          title="改訂履歴"
+                                        >
+                                          <History className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleExportPDF(regulation)}
+                                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50/30 rounded-lg transition-colors"
+                                          title="PDF出力"
+                                        >
+                                          <FileText className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleExportWord(regulation)}
+                                          className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50/30 rounded-lg transition-colors"
+                                          title="Word出力"
+                                        >
+                                          <Download className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDelete(regulation.id)}
+                                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50/30 rounded-lg transition-colors"
+                                          title="削除"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </div>
@@ -484,39 +642,107 @@ ${regulation.representative}`;
         </div>
       </div>
 
-      {/* PDFアップロードモーダル */}
-      {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">PDFファイルをアップロード</h3>
-            <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center">
-              <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-              <p className="text-slate-600 mb-4">出張規程のPDFファイルを選択してください</p>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={handleUpload}
-                className="hidden"
-                id="pdf-upload"
-              />
-              <label
-                htmlFor="pdf-upload"
-                className="inline-block px-4 py-2 bg-navy-600 hover:bg-navy-700 text-white rounded-lg cursor-pointer transition-colors"
-              >
-                ファイルを選択
-              </label>
-            </div>
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowUploadModal(false)}
-                className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
-              >
-                キャンセル
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+             {/* PDFアップロードモーダル */}
+       {showUploadModal && (
+         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+           <div className="bg-white rounded-xl p-6 max-w-md w-full">
+             <h3 className="text-lg font-semibold text-slate-800 mb-4">PDFファイルをアップロード</h3>
+             <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center">
+               <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+               <p className="text-slate-600 mb-4">出張規程のPDFファイルを選択してください</p>
+               <input
+                 type="file"
+                 accept=".pdf"
+                 onChange={handleUpload}
+                 className="hidden"
+                 id="pdf-upload"
+               />
+               <label
+                 htmlFor="pdf-upload"
+                 className="inline-block px-4 py-2 bg-navy-600 hover:bg-navy-700 text-white rounded-lg cursor-pointer transition-colors"
+               >
+                 ファイルを選択
+               </label>
+             </div>
+             <div className="flex justify-end space-x-3 mt-6">
+               <button
+                 onClick={() => setShowUploadModal(false)}
+                 className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
+               >
+                 キャンセル
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
+
+       {/* 改訂版履歴モーダル */}
+       {showHistoryModal && selectedRegulation && (
+         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+           <div className="bg-white rounded-xl p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+             <div className="flex items-center justify-between mb-6">
+               <h3 className="text-xl font-semibold text-slate-800">
+                 {selectedRegulation.company_name} 改訂版履歴
+               </h3>
+               <button
+                 onClick={() => setShowHistoryModal(false)}
+                 className="text-slate-400 hover:text-slate-600 transition-colors"
+               >
+                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                 </svg>
+               </button>
+             </div>
+             
+             {regulationHistory.length === 0 ? (
+               <div className="text-center py-8">
+                 <p className="text-slate-500">改訂版履歴がありません</p>
+               </div>
+             ) : (
+               <div className="space-y-4">
+                 {regulationHistory.map((version) => (
+                   <div key={version.id} className="border border-slate-200 rounded-lg p-4">
+                     <div className="flex items-center justify-between mb-3">
+                       <div className="flex items-center space-x-3">
+                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                           version.version_number === selectedRegulation.revision_number
+                             ? 'bg-blue-100 text-blue-800'
+                             : 'bg-slate-100 text-slate-700'
+                         }`}>
+                           {version.version_name}
+                         </span>
+                         <span className="text-sm text-slate-600">
+                           実施日: {version.implementation_date ? new Date(version.implementation_date).toLocaleDateString('ja-JP') : '未設定'}
+                         </span>
+                       </div>
+                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                         version.status === 'active' ? 'bg-green-100 text-green-800' :
+                         version.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                         'bg-slate-100 text-slate-700'
+                       }`}>
+                         {version.status === 'active' ? '運用中' : 
+                          version.status === 'draft' ? '下書き' : 'アーカイブ'}
+                       </span>
+                     </div>
+                     
+                     {version.change_summary && (
+                       <div className="mb-3">
+                         <p className="text-sm text-slate-700">
+                           <span className="font-medium">変更内容:</span> {version.change_summary}
+                         </p>
+                       </div>
+                     )}
+                     
+                     <div className="text-xs text-slate-500">
+                       作成日: {new Date(version.created_at).toLocaleDateString('ja-JP')}
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             )}
+           </div>
+         </div>
+       )}
     </div>
   );
 }

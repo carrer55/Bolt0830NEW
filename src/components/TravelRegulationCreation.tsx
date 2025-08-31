@@ -174,12 +174,18 @@ function TravelRegulationCreation({ onNavigate }: TravelRegulationCreationProps)
 　　　　　海外出張とは、日本国外の地域への宿泊を伴う出張であり、所属長（または代表者）が認めたものとする。出張日当と交通費日当（実費精算可）、宿泊日当（実費精算可）に加えて、支度料を第７条に定める旅費を支給する。
 
 （旅費一覧）
-第７条　旅費は、以下のとおり役職に応じて支給する。
-（円）
-	国内出張	海外出張
-役職	出張日当	宿泊料	交通費	出張日当	宿泊料	支度料	交通費
+第７条　旅費は、以下のとおり役職に応じて支給する。（円）
+
+【国内出張】
+役職名	出張日当	宿泊料	交通費
 ${data.positions.map(pos => 
-`${pos.name}	${pos.domesticDailyAllowance}	${data.isAccommodationRealExpense ? '実費' : pos.domesticAccommodation}	${data.isTransportationRealExpense ? '実費' : pos.domesticTransportation}	${pos.overseasDailyAllowance}	${data.isAccommodationRealExpense ? '実費' : pos.overseasAccommodation}	${pos.overseasPreparation}	${data.isTransportationRealExpense ? '実費' : pos.overseasTransportation}`
+`${pos.name}	${pos.domesticDailyAllowance}円	${data.isAccommodationRealExpense ? '実費' : pos.domesticAccommodation + '円'}	${data.isTransportationRealExpense ? '実費' : pos.domesticTransportation + '円'}`
+).join('\n')}
+
+【海外出張】
+役職名	出張日当	宿泊料	支度料	交通費
+${data.positions.map(pos => 
+`${pos.name}	${pos.overseasDailyAllowance}円	${data.isAccommodationRealExpense ? '実費' : pos.overseasAccommodation + '円'}	${pos.overseasPreparation}円	${data.isTransportationRealExpense ? '実費' : pos.overseasTransportation + '円'}`
 ).join('\n')}
 
 （交通機関）
@@ -205,8 +211,51 @@ ${data.companyInfo.representative}`;
       return;
     }
 
+    // 保存前の最終確認
+    const confirmMessage = `以下の内容で出張規程を保存しますか？\n\n会社名: ${data.companyInfo.name}\n代表者: ${data.companyInfo.representative}\n改訂版: ${data.companyInfo.revision}\n実施日: ${data.implementationDate}\n\n保存を続行しますか？`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    // 入力値の検証
+    if (!data.companyInfo.name.trim()) {
+      setError('会社名を入力してください');
+      return;
+    }
+
+    if (!data.companyInfo.representative.trim()) {
+      setError('代表者名を入力してください');
+      return;
+    }
+
+    if (!data.companyInfo.address.trim()) {
+      setError('会社住所を入力してください');
+      return;
+    }
+
+    if (data.positions.length === 0) {
+      setError('少なくとも1つの役職を設定してください');
+      return;
+    }
+
+    // 役職名の検証
+    for (const position of data.positions) {
+      if (!position.name.trim()) {
+        setError('役職名を入力してください');
+        return;
+      }
+    }
+
     setLoading(true);
     setError('');
+
+    // タイムアウト処理を追加
+    const timeoutId = setTimeout(() => {
+      console.warn('保存処理がタイムアウトしました');
+      setLoading(false);
+      setError('保存処理がタイムアウトしました。再度お試しください。');
+    }, 30000); // 30秒でタイムアウト
 
     try {
       // 編集モードかどうかを確認
@@ -226,13 +275,16 @@ ${data.companyInfo.representative}`;
             revision_number: data.companyInfo.revision,
             is_transportation_real_expense: data.isTransportationRealExpense,
             is_accommodation_real_expense: data.isAccommodationRealExpense,
-            regulation_text: generateRegulationText(),
+            regulation_full_text: generateRegulationText(),
             status: 'active',
             updated_at: new Date().toISOString()
           })
           .eq('id', editingId);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('規程更新エラー:', updateError);
+          throw updateError;
+        }
 
         // 既存の役職設定を削除して新しいものを追加
         const { error: deletePositionsError } = await supabase
@@ -240,7 +292,10 @@ ${data.companyInfo.representative}`;
           .delete()
           .eq('regulation_id', editingId);
 
-        if (deletePositionsError) throw deletePositionsError;
+        if (deletePositionsError) {
+          console.error('役職削除エラー:', deletePositionsError);
+          throw deletePositionsError;
+        }
 
         // 新しい役職設定を追加
         const positionsToInsert = data.positions.map(position => ({
@@ -259,35 +314,92 @@ ${data.companyInfo.representative}`;
           .from('regulation_positions')
           .insert(positionsToInsert);
 
-        if (positionsError) throw positionsError;
+        if (positionsError) {
+          console.error('役職挿入エラー:', positionsError);
+          throw positionsError;
+        }
 
         localStorage.removeItem('editingRegulationId');
         alert('出張規程が正常に更新されました！');
       } else {
-        // 新規作成
-        const { data: regulation, error: regulationError } = await supabase
+        // 重複チェック: 同じ会社名で既存の規程があるかチェック
+        const { data: existingRegulations, error: checkError } = await supabase
           .from('travel_expense_regulations')
-          .insert({
-            user_id: user.id,
-            regulation_name: `${data.companyInfo.name} 出張旅費規程`,
-            regulation_type: 'domestic',
-            company_name: data.companyInfo.name,
-            company_address: data.companyInfo.address,
-            representative: data.companyInfo.representative,
-            distance_threshold: data.distanceThreshold,
-            implementation_date: data.implementationDate,
-            revision_number: data.companyInfo.revision,
-            is_transportation_real_expense: data.isTransportationRealExpense,
-            is_accommodation_real_expense: data.isAccommodationRealExpense,
-            regulation_text: generateRegulationText(),
-            status: 'active'
-          })
-          .select()
-          .single();
+          .select('id, regulation_name, company_name, revision_number')
+          .eq('company_name', data.companyInfo.name.trim())
+          .eq('user_id', user.id);
 
-        if (regulationError) throw regulationError;
+        if (checkError) {
+          console.error('重複チェックエラー:', checkError);
+          throw checkError;
+        }
 
-        // 役職別設定を保存
+                 if (existingRegulations && existingRegulations.length > 0) {
+           // 既存の規程がある場合、改訂版番号を自動設定
+           const maxRevision = Math.max(...existingRegulations.map(r => r.revision_number || 1));
+           const newRevision = maxRevision + 1;
+           
+           // 改訂版番号を自動設定
+           setData(prev => ({
+             ...prev,
+             companyInfo: {
+               ...prev.companyInfo,
+               revision: newRevision
+             }
+           }));
+           
+           // 改訂版番号が自動設定されたことをアナウンス
+           setError(`「${data.companyInfo.name}」の出張規程は既に存在します。改訂番号を新しく付与しました（改訂版${newRevision}）。改訂版として保存する場合は、再度保存ボタンをクリックしてください。`);
+           setLoading(false);
+           return;
+         }
+        
+                 // 新規作成または改訂版作成
+         let baseRegulationId = null;
+         let parentRegulationId = null;
+         
+         // 既存の規程がある場合は、基本規程IDと親規程IDを設定
+         if (existingRegulations && existingRegulations.length > 0) {
+           const baseRegulation = existingRegulations.find(r => r.revision_number === 1) || existingRegulations[0];
+           baseRegulationId = baseRegulation.id;
+           parentRegulationId = existingRegulations[0].id; // 最新版を親とする
+           
+           // 既存の最新版を非最新版に更新
+           await supabase
+             .from('travel_expense_regulations')
+             .update({ is_latest_version: false })
+             .eq('id', parentRegulationId);
+         }
+         
+         const { data: regulation, error: regulationError } = await supabase
+           .from('travel_expense_regulations')
+           .insert({
+             user_id: user.id,
+             regulation_name: `${data.companyInfo.name} 出張旅費規程`,
+             regulation_type: 'domestic',
+             company_name: data.companyInfo.name,
+             company_address: data.companyInfo.address,
+             representative: data.companyInfo.representative,
+             distance_threshold: data.distanceThreshold,
+             implementation_date: data.implementationDate,
+             revision_number: data.companyInfo.revision,
+             is_transportation_real_expense: data.isTransportationRealExpense,
+             is_accommodation_real_expense: data.isAccommodationRealExpense,
+             regulation_full_text: generateRegulationText(),
+             status: 'active',
+             base_regulation_id: baseRegulationId,
+             parent_regulation_id: parentRegulationId,
+             is_latest_version: true
+           })
+           .select()
+           .single();
+
+        if (regulationError) {
+          console.error('規程作成エラー:', regulationError);
+          throw regulationError;
+        }
+
+                // 役職別設定を保存
         const positionsToInsert = data.positions.map(position => ({
           regulation_id: regulation.id,
           position_name: position.name,
@@ -304,26 +416,98 @@ ${data.companyInfo.representative}`;
           .from('regulation_positions')
           .insert(positionsToInsert);
 
-        if (positionsError) throw positionsError;
+        if (positionsError) {
+          console.error('役職設定保存エラー:', positionsError);
+          throw positionsError;
+        }
+         
+                   // 改訂版履歴を保存
+          if (baseRegulationId) {
+            const { error: versionError } = await supabase
+              .from('regulation_versions')
+              .insert({
+                base_regulation_id: baseRegulationId,
+               version_number: data.companyInfo.revision,
+               version_name: `第${data.companyInfo.revision}版`,
+               company_name: data.companyInfo.name,
+               company_address: data.companyInfo.address,
+               representative: data.companyInfo.representative,
+               distance_threshold: data.distanceThreshold,
+               implementation_date: data.implementationDate,
+               is_transportation_real_expense: data.isTransportationRealExpense,
+               is_accommodation_real_expense: data.isAccommodationRealExpense,
+               regulation_full_text: generateRegulationText(),
+               status: 'active',
+               change_summary: `改訂版${data.companyInfo.revision}として作成`,
+               created_by: user.id
+             });
+           
+                       if (versionError) {
+              console.error('改訂版履歴保存エラー:', versionError);
+            }
+          }
 
-        alert('出張規程が正常に作成されました！');
-      }
+          const successMessage = baseRegulationId 
+            ? `出張規程の改訂版${data.companyInfo.revision}が正常に作成されました！`
+            : '出張規程が正常に作成されました！';
+          
+          alert(successMessage);
+        }
+        
+        onNavigate('travel-regulation-management');
       
-      onNavigate('travel-regulation-management');
     } catch (err: any) {
       console.error('出張規程の保存エラー:', err);
-      setError(err.message || '出張規程の保存に失敗しました');
+      
+      // より詳細なエラーメッセージを表示
+      let errorMessage = '出張規程の保存に失敗しました';
+      
+      if (err.code === '23505') {
+        errorMessage += ': 重複するデータが存在します。既存の規程を確認してください。';
+      } else if (err.code === '23503') {
+        errorMessage += ': 関連するデータが見つかりません';
+      } else if (err.code === '42P01') {
+        errorMessage += ': テーブルが見つかりません';
+      } else if (err.code === '42703') {
+        errorMessage += ': 列が見つかりません';
+      } else if (err.message) {
+        errorMessage += ': ' + err.message;
+      } else if (err.details) {
+        errorMessage += ': ' + err.details;
+      } else if (err.error) {
+        errorMessage += ': ' + err.error;
+      }
+      
+      setError(errorMessage);
+      
+      // エラーが発生した場合、編集モードをクリア
+      if (localStorage.getItem('editingRegulationId')) {
+        localStorage.removeItem('editingRegulationId');
+      }
+      
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
-    }
-  };
+            }
+    };
 
   // 編集モードの場合、既存データを読み込み
   useEffect(() => {
     const editingId = localStorage.getItem('editingRegulationId');
     if (editingId && user) {
-      loadExistingRegulation(editingId);
+      // 編集IDの形式を確認
+      if (editingId && editingId.length > 0) {
+        loadExistingRegulation(editingId);
+      } else {
+        localStorage.removeItem('editingRegulationId');
+      }
     }
+
+    // クリーンアップ処理
+    return () => {
+      // コンポーネントがアンマウントされる際にloading状態をリセット
+      setLoading(false);
+    };
   }, [user]);
 
   const loadExistingRegulation = async (regulationId: string) => {
@@ -333,20 +517,33 @@ ${data.companyInfo.representative}`;
         .from('travel_expense_regulations')
         .select('*')
         .eq('id', regulationId)
-        .single();
+        .maybeSingle();
 
-      if (regulationError) throw regulationError;
+      if (regulationError) {
+        console.error('規程データ取得エラー:', regulationError);
+        throw regulationError;
+      }
+
+      if (!regulation) {
+        console.error('規程データが見つかりません:', regulationId);
+        setError('指定された規程が見つかりません');
+        return;
+      }
 
       // 役職データを取得
       const { data: positions, error: positionsError } = await supabase
         .from('regulation_positions')
         .select('*')
-        .eq('regulation_id', regulationId);
+        .eq('regulation_id', regulationId)
+        .order('sort_order', { ascending: true });
 
-      if (positionsError) throw positionsError;
+      if (positionsError) {
+        console.error('役職データ取得エラー:', positionsError);
+        throw positionsError;
+      }
 
       // フォームデータを設定
-      setData({
+      const formData = {
         companyInfo: {
           name: regulation.company_name || '',
           address: regulation.company_address || '',
@@ -369,10 +566,31 @@ ${data.companyInfo.representative}`;
           overseasTransportation: pos.overseas_transportation_allowance || 0
         })),
         implementationDate: regulation.implementation_date || new Date().toISOString().split('T')[0]
-      });
+      };
+
+      setData(formData);
+      
+      // エラーをクリア
+      setError('');
+      
     } catch (err: any) {
       console.error('既存規程の読み込みエラー:', err);
-      setError('既存規程の読み込みに失敗しました: ' + err.message);
+      
+      // より詳細なエラーメッセージを表示
+      let errorMessage = '既存規程の読み込みに失敗しました';
+      
+      if (err.code === 'PGRST116') {
+        errorMessage += ': 指定された規程が見つかりません';
+      } else if (err.message) {
+        errorMessage += ': ' + err.message;
+      } else if (err.details) {
+        errorMessage += ': ' + err.details;
+      }
+      
+      setError(errorMessage);
+      
+      // エラーが発生した場合、編集モードをクリア
+      localStorage.removeItem('editingRegulationId');
     }
   };
 
@@ -467,18 +685,32 @@ ${data.companyInfo.representative}`;
                 <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl">
                   <h2 className="text-xl font-semibold text-slate-800 mb-4">会社情報</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">会社名</label>
-                      <input
-                        type="text"
-                        value={data.companyInfo.name}
-                        onChange={(e) => setData(prev => ({ 
-                          ...prev, 
-                          companyInfo: { ...prev.companyInfo, name: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 bg-white/50 border border-white/40 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-navy-400 backdrop-blur-xl"
-                      />
-                    </div>
+                                         <div>
+                       <label className="block text-sm font-medium text-slate-700 mb-2">会社名</label>
+                       <input
+                         type="text"
+                         value={data.companyInfo.name}
+                         onChange={(e) => {
+                           const newCompanyName = e.target.value;
+                           setData(prev => {
+                             // 会社名が変更された場合、改訂版番号を1にリセット
+                             const shouldResetRevision = prev.companyInfo.name !== newCompanyName;
+                             return {
+                               ...prev,
+                               companyInfo: {
+                                 ...prev.companyInfo,
+                                 name: newCompanyName,
+                                 revision: shouldResetRevision ? 1 : prev.companyInfo.revision
+                               }
+                             };
+                           });
+                         }}
+                         className="w-full px-3 py-2 bg-white/50 border border-white/40 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-navy-400 backdrop-blur-xl"
+                       />
+                       {data.companyInfo.revision === 1 && (
+                         <p className="text-xs text-blue-600 mt-1">改訂版番号が1にリセットされました</p>
+                       )}
+                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-2">代表者</label>
                       <input
@@ -710,40 +942,148 @@ ${data.companyInfo.representative}`;
                   </div>
                 </div>
 
-                {/* プレビュー */}
-                <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl">
-                  <h2 className="text-xl font-semibold text-slate-800 mb-4">規程プレビュー</h2>
-                  <div className="bg-white/50 rounded-lg p-6 max-h-96 overflow-y-auto">
-                    <pre className="text-sm text-slate-800 whitespace-pre-line font-mono leading-relaxed">
-                      {generateRegulationText()}
-                    </pre>
-                  </div>
-                </div>
+                                 {/* プレビュー */}
+                 <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl">
+                   <h2 className="text-xl font-semibold text-slate-800 mb-4">規程プレビュー</h2>
+                   <div className="bg-white/50 rounded-lg p-6 max-h-96 overflow-y-auto">
+                     <pre className="text-sm text-slate-800 whitespace-pre-line font-mono leading-relaxed">
+                       {generateRegulationText()}
+                     </pre>
+                     
+                     {/* 第7条の表形式表示 */}
+                     <div className="mt-6 border-t border-gray-300 pt-6">
+                       <h3 className="text-lg font-semibold text-slate-800 mb-4">第７条 旅費一覧（表形式）</h3>
+                       <div className="overflow-x-auto">
+                         <table className="w-full border-collapse border border-gray-300 text-sm">
+                           <thead>
+                             <tr className="bg-gray-100">
+                               <th className="border border-gray-300 px-3 py-2 text-left font-medium">役職</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium" colSpan={3}>国内出張</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium" colSpan={4}>海外出張</th>
+                             </tr>
+                             <tr className="bg-gray-50">
+                               <th className="border border-gray-300 px-3 py-2 text-left font-medium">役職名</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium">出張日当</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium">宿泊料</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium">交通費</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium">出張日当</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium">宿泊料</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium">支度料</th>
+                               <th className="border border-gray-300 px-3 py-2 text-center font-medium">交通費</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {data.positions.map((position, index) => (
+                               <tr key={position.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                 <td className="border border-gray-300 px-3 py-2 font-medium">{position.name}</td>
+                                 <td className="border border-gray-300 px-3 py-2 text-center">¥{position.domesticDailyAllowance.toLocaleString()}</td>
+                                 <td className="border border-gray-300 px-3 py-2 text-center">
+                                   {data.isAccommodationRealExpense ? '実費' : `¥${position.domesticAccommodation.toLocaleString()}`}
+                                 </td>
+                                 <td className="border border-gray-300 px-3 py-2 text-center">
+                                   {data.isTransportationRealExpense ? '実費' : `¥${position.domesticTransportation.toLocaleString()}`}
+                                 </td>
+                                 <td className="border border-gray-300 px-3 py-2 text-center">¥{position.overseasDailyAllowance.toLocaleString()}</td>
+                                 <td className="border border-gray-300 px-3 py-2 text-center">
+                                   {data.isAccommodationRealExpense ? '実費' : `¥${position.overseasAccommodation.toLocaleString()}`}
+                                 </td>
+                                 <td className="border border-gray-300 px-3 py-2 text-center">¥{position.overseasPreparation.toLocaleString()}</td>
+                                 <td className="border border-gray-300 px-3 py-2 text-center">
+                                   {data.isTransportationRealExpense ? '実費' : `¥${position.overseasTransportation.toLocaleString()}`}
+                                 </td>
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
 
-                {/* 保存ボタン */}
-                {error && (
-                  <div className="bg-red-50/50 border border-red-200/50 rounded-lg p-4 mb-6">
-                    <p className="text-red-700 text-sm">{error}</p>
-                  </div>
-                )}
+                                                  {/* エラー表示 */}
+                  {error && (
+                    <div className="bg-red-50/50 border border-red-200/50 rounded-lg p-4 mb-6">
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-sm font-medium text-red-800">エラーが発生しました</h3>
+                          <p className="text-sm text-red-700 mt-1">{error}</p>
+                          
+                          {/* 重複エラーの場合の解決策を表示 */}
+                          {error.includes('重複するデータが存在します') && (
+                            <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                              <h4 className="text-sm font-medium text-blue-800 mb-2">解決方法：</h4>
+                              <ul className="text-sm text-blue-700 space-y-1">
+                                <li>• 既存の規程を編集する場合は、出張規定管理画面から該当規程を選択</li>
+                                <li>• 新しい改訂版として作成する場合は、改訂版番号を変更</li>
+                                <li>• 会社名を変更して新規作成</li>
+                              </ul>
+                            </div>
+                          )}
+                          
+                          <div className="mt-3 flex space-x-2">
+                            <button
+                              onClick={() => {
+                                setError('');
+                                localStorage.removeItem('editingRegulationId');
+                              }}
+                              className="text-sm text-red-600 hover:text-red-500 underline"
+                            >
+                              エラーをクリアして新規作成に戻る
+                            </button>
+                            
+                            {error.includes('重複するデータが存在します') && (
+                              <button
+                                onClick={() => onNavigate('travel-regulation-management')}
+                                className="text-sm text-blue-600 hover:text-blue-500 underline"
+                              >
+                                既存規程を確認する
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-                <div className="flex justify-end space-x-4">
-                  <button
-                    onClick={() => onNavigate('travel-regulation-management')}
-                    disabled={loading}
-                    className="px-6 py-3 bg-white/50 hover:bg-white/70 text-slate-700 rounded-lg font-medium transition-colors backdrop-blur-sm"
-                  >
-                    キャンセル
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={loading}
-                    className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-navy-700 to-navy-900 hover:from-navy-800 hover:to-navy-950 text-white rounded-lg font-medium shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Save className="w-5 h-5" />
-                    <span>{loading ? '保存中...' : '規程を保存'}</span>
-                  </button>
-                </div>
+                                 <div className="flex justify-end space-x-4">
+                   <button
+                     onClick={() => onNavigate('travel-regulation-management')}
+                     disabled={loading}
+                     className="px-6 py-3 bg-white/50 hover:bg-white/70 text-slate-700 rounded-lg font-medium transition-colors backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                     キャンセル
+                   </button>
+                   
+                   {/* エラーが発生した場合のリセットボタン */}
+                   {error && (
+                     <button
+                       onClick={() => {
+                         setError('');
+                         setLoading(false);
+                         if (localStorage.getItem('editingRegulationId')) {
+                           localStorage.removeItem('editingRegulationId');
+                         }
+                       }}
+                       className="px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition-colors"
+                     >
+                       エラーをリセット
+                     </button>
+                   )}
+                   
+                   <button
+                     onClick={handleSave}
+                     disabled={loading}
+                     className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-navy-700 to-navy-900 hover:from-navy-800 hover:to-navy-950 text-white rounded-lg font-medium shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                     <Save className="w-5 h-5" />
+                     <span>{loading ? '保存中...' : '規程を保存'}</span>
+                   </button>
+                 </div>
               </div>
             </div>
           </div>

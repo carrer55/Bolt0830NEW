@@ -116,6 +116,7 @@ function MyPage({ onNavigate }: MyPageProps) {
 
       if (error) {
         console.error('日当設定読み込みエラー:', error);
+        // エラーの場合はデフォルト値を使用
         return;
       }
 
@@ -134,6 +135,8 @@ function MyPage({ onNavigate }: MyPageProps) {
           overseas_use_accommodation_allowance: data.overseas_use_accommodation_allowance ?? true,
           overseas_use_preparation_allowance: data.overseas_use_preparation_allowance ?? true
         });
+      } else {
+        // データが存在しない場合はデフォルト値のまま
       }
     } catch (err) {
       console.error('日当設定読み込みエラー:', err);
@@ -205,18 +208,41 @@ function MyPage({ onNavigate }: MyPageProps) {
     setError('');
 
     try {
-      const { error } = await supabase
+      // 保存するデータを準備
+      const saveData = {
+        user_id: user.id,
+        domestic_daily_allowance: allowanceSettings.domestic_daily_allowance,
+        domestic_transportation_daily_allowance: allowanceSettings.domestic_transportation_daily_allowance,
+        domestic_accommodation_daily_allowance: allowanceSettings.domestic_accommodation_daily_allowance,
+        overseas_daily_allowance: allowanceSettings.overseas_daily_allowance,
+        overseas_transportation_daily_allowance: allowanceSettings.overseas_transportation_daily_allowance,
+        overseas_accommodation_daily_allowance: allowanceSettings.overseas_accommodation_daily_allowance,
+        overseas_preparation_allowance: allowanceSettings.overseas_preparation_allowance,
+        domestic_use_transportation_allowance: allowanceSettings.domestic_use_transportation_allowance,
+        domestic_use_accommodation_allowance: allowanceSettings.domestic_use_accommodation_allowance,
+        overseas_use_transportation_allowance: allowanceSettings.overseas_use_transportation_allowance,
+        overseas_use_accommodation_allowance: allowanceSettings.overseas_use_accommodation_allowance,
+        overseas_use_preparation_allowance: allowanceSettings.overseas_use_preparation_allowance,
+        updated_at: new Date().toISOString()
+      };
+      
+      const { data, error } = await supabase
         .from('allowance_settings')
-        .upsert({
-          user_id: user.id,
-          ...allowanceSettings,
-          updated_at: new Date().toISOString()
+        .upsert(saveData, {
+          onConflict: 'user_id'
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('日当設定保存エラー:', error);
+        throw error;
+      }
 
       alert('日当設定が更新されました');
+      
+      // 保存後に再読み込み
+      await loadAllowanceSettings();
     } catch (err: any) {
+      console.error('日当設定保存エラー詳細:', err);
       setError('日当設定の更新に失敗しました: ' + err.message);
     } finally {
       setLoading(false);

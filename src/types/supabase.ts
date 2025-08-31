@@ -179,141 +179,306 @@ export interface Database {
           created_at?: string
         }
       }
-      // 出張規程テーブル
-      travel_expense_regulations: {
-        Row: {
-          id: string
-          user_id: string
-          regulation_name: string
-          regulation_type: string
-          company_name: string | null
-          company_address: string | null
-          representative: string | null
-          distance_threshold: number | null
-          implementation_date: string | null
-          revision_number: number | null
-          regulation_text: string | null
-          status: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          regulation_name: string
-          regulation_type: string
-          company_name?: string | null
-          company_address?: string | null
-          representative?: string | null
-          distance_threshold?: number | null
-          implementation_date?: string | null
-          revision_number?: number | null
-          regulation_text?: string | null
-          status?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          regulation_name?: string
-          regulation_type?: string
-          company_name?: string | null
-          company_address?: string | null
-          representative?: string | null
-          distance_threshold?: number | null
-          implementation_date?: string | null
-          revision_number?: number | null
-          regulation_text?: string | null
-          status?: string
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      // 規程役職設定テーブル
-      regulation_positions: {
-        Row: {
-          id: string
-          regulation_id: string
-          position_name: string
-          domestic_daily_allowance: number
-          domestic_accommodation_allowance: number
-          domestic_transportation_allowance: number
-          overseas_daily_allowance: number
-          overseas_accommodation_allowance: number
-          overseas_preparation_allowance: number
-          overseas_transportation_allowance: number
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          regulation_id: string
-          position_name: string
-          domestic_daily_allowance?: number
-          domestic_accommodation_allowance?: number
-          domestic_transportation_allowance?: number
-          overseas_daily_allowance?: number
-          overseas_accommodation_allowance?: number
-          overseas_preparation_allowance?: number
-          overseas_transportation_allowance?: number
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          regulation_id?: string
-          position_name?: string
-          domestic_daily_allowance?: number
-          domestic_accommodation_allowance?: number
-          domestic_transportation_allowance?: number
-          overseas_daily_allowance?: number
-          overseas_accommodation_allowance?: number
-          overseas_preparation_allowance?: number
-          overseas_transportation_allowance?: number
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      // 日当設定テーブル
-      allowance_settings: {
-        Row: {
-          id: string
-          user_id: string
-          domestic_daily_allowance: number
-          overseas_daily_allowance: number
-          transportation_daily_allowance: number
-          accommodation_daily_allowance: number
-          use_transportation_allowance: boolean
-          use_accommodation_allowance: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          domestic_daily_allowance?: number
-          overseas_daily_allowance?: number
-          transportation_daily_allowance?: number
-          accommodation_daily_allowance?: number
-          use_transportation_allowance?: boolean
-          use_accommodation_allowance?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          domestic_daily_allowance?: number
-          overseas_daily_allowance?: number
-          transportation_daily_allowance?: number
-          accommodation_daily_allowance?: number
-          use_transportation_allowance?: boolean
-          use_accommodation_allowance?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-      }
+             // 出張規程テーブル
+       travel_expense_regulations: {
+         Row: {
+           id: string
+           user_id: string
+           regulation_name: string
+           regulation_type: string
+           company_name: string | null
+           company_address: string | null
+           representative: string | null
+           distance_threshold: number | null
+           implementation_date: string | null
+           revision_number: number | null
+           regulation_text: string | null
+           regulation_full_text: string | null
+           status: string
+           is_transportation_real_expense: boolean | null
+           is_accommodation_real_expense: boolean | null
+           base_regulation_id: string | null
+           is_latest_version: boolean | null
+           parent_regulation_id: string | null
+           created_at: string
+           updated_at: string
+         }
+         Insert: {
+           id?: string
+           user_id: string
+           regulation_name: string
+           regulation_type: string
+           company_name?: string | null
+           company_address?: string | null
+           representative?: string | null
+           distance_threshold?: number | null
+           implementation_date?: string | null
+           revision_number?: number | null
+           regulation_text?: string | null
+           regulation_full_text?: string | null
+           status?: string
+           is_transportation_real_expense?: boolean | null
+           is_accommodation_real_expense?: boolean | null
+           base_regulation_id?: string | null
+           is_latest_version?: boolean | null
+           parent_regulation_id?: string | null
+           created_at?: string
+           updated_at?: string
+         }
+         Update: {
+           id?: string
+           user_id?: string
+           regulation_name?: string
+           regulation_type?: string
+           company_name?: string | null
+           company_address?: string | null
+           representative?: string | null
+           distance_threshold?: number | null
+           implementation_date?: string | null
+           revision_number?: number | null
+           regulation_text?: string | null
+           regulation_full_text?: string | null
+           status?: string
+           is_transportation_real_expense?: boolean | null
+           is_accommodation_real_expense?: boolean | null
+           base_regulation_id?: string | null
+           is_latest_version?: boolean | null
+           parent_regulation_id?: string | null
+           created_at?: string
+           updated_at?: string
+         }
+       }
+             // 規程役職設定テーブル
+       regulation_positions: {
+         Row: {
+           id: string
+           regulation_id: string
+           position_name: string
+           sort_order: number | null
+           domestic_daily_allowance: number
+           domestic_accommodation_allowance: number
+           domestic_transportation_allowance: number
+           overseas_daily_allowance: number
+           overseas_accommodation_allowance: number
+           overseas_preparation_allowance: number
+           overseas_transportation_allowance: number
+           created_at: string
+           updated_at: string
+         }
+         Insert: {
+           id?: string
+           regulation_id: string
+           position_name: string
+           sort_order?: number | null
+           domestic_daily_allowance?: number
+           domestic_accommodation_allowance?: number
+           domestic_transportation_allowance?: number
+           overseas_daily_allowance?: number
+           overseas_accommodation_allowance?: number
+           overseas_preparation_allowance?: number
+           overseas_transportation_allowance?: number
+           created_at?: string
+           updated_at?: string
+         }
+         Update: {
+           id?: string
+           regulation_id?: string
+           position_name?: string
+           sort_order?: number | null
+           domestic_daily_allowance?: number
+           domestic_accommodation_allowance?: number
+           domestic_transportation_allowance?: number
+           overseas_daily_allowance?: number
+           overseas_accommodation_allowance?: number
+           overseas_preparation_allowance?: number
+           overseas_transportation_allowance?: number
+           created_at?: string
+           updated_at?: string
+         }
+       }
+             // 規程バージョンテーブル
+       regulation_versions: {
+         Row: {
+           id: string
+           base_regulation_id: string
+           version_number: number
+           version_name: string
+           company_name: string
+           company_address: string
+           representative: string
+           distance_threshold: number
+           implementation_date: string
+           is_transportation_real_expense: boolean
+           is_accommodation_real_expense: boolean
+           regulation_full_text: string
+           status: string
+           change_summary: string | null
+           created_by: string
+           created_at: string
+           updated_at: string
+         }
+         Insert: {
+           id?: string
+           base_regulation_id: string
+           version_number: number
+           version_name: string
+           company_name: string
+           company_address: string
+           representative: string
+           distance_threshold: number
+           implementation_date: string
+           is_transportation_real_expense: boolean
+           is_accommodation_real_expense: boolean
+           regulation_full_text: string
+           status: string
+           change_summary?: string | null
+           created_by: string
+           created_at?: string
+           updated_at?: string
+         }
+         Update: {
+           id?: string
+           base_regulation_id?: string
+           version_number?: number
+           version_name?: string
+           company_name?: string
+           company_address?: string
+           representative?: string
+           distance_threshold?: number
+           implementation_date?: string
+           is_transportation_real_expense?: boolean
+           is_accommodation_real_expense?: boolean
+           regulation_full_text?: string
+           status?: string
+           change_summary?: string | null
+           created_by?: string
+           created_at?: string
+           updated_at?: string
+         }
+                }
+             // 規程バージョン役職設定テーブル
+       regulation_version_positions: {
+         Row: {
+           id: string
+           regulation_version_id: string
+           position_name: string
+           sort_order: number | null
+           domestic_daily_allowance: number
+           domestic_accommodation_allowance: number
+           domestic_transportation_allowance: number
+           overseas_daily_allowance: number
+           overseas_accommodation_allowance: number
+           overseas_preparation_allowance: number
+           overseas_transportation_allowance: number
+           created_at: string
+           updated_at: string
+         }
+         Insert: {
+           id?: string
+           regulation_version_id: string
+           position_name: string
+           sort_order?: number | null
+           domestic_daily_allowance?: number
+           domestic_accommodation_allowance?: number
+           domestic_transportation_allowance?: number
+           overseas_daily_allowance?: number
+           overseas_accommodation_allowance?: number
+           overseas_preparation_allowance?: number
+           overseas_transportation_allowance?: number
+           created_at?: string
+           updated_at?: string
+         }
+         Update: {
+           id?: string
+           regulation_version_id?: string
+           position_name?: string
+           sort_order?: number | null
+           domestic_daily_allowance?: number
+           domestic_accommodation_allowance?: number
+           domestic_transportation_allowance?: number
+           overseas_daily_allowance?: number
+           overseas_accommodation_allowance?: number
+           overseas_preparation_allowance?: number
+           overseas_transportation_allowance?: number
+           created_at?: string
+           updated_at?: string
+         }
+       }
+             // 日当設定テーブル
+       allowance_settings: {
+         Row: {
+           id: string
+           user_id: string
+           domestic_daily_allowance: number
+           overseas_daily_allowance: number
+           transportation_daily_allowance: number
+           accommodation_daily_allowance: number
+           misc_daily_allowance: number
+           is_active: boolean
+           use_transportation_allowance: boolean
+           use_accommodation_allowance: boolean
+           domestic_transportation_daily_allowance: number
+           domestic_accommodation_daily_allowance: number
+           overseas_transportation_daily_allowance: number
+           overseas_accommodation_daily_allowance: number
+           overseas_preparation_allowance: number
+           domestic_use_transportation_allowance: boolean
+           domestic_use_accommodation_allowance: boolean
+           overseas_use_transportation_allowance: boolean
+           overseas_use_accommodation_allowance: boolean
+           overseas_use_preparation_allowance: boolean
+           created_at: string
+           updated_at: string
+         }
+         Insert: {
+           id?: string
+           user_id: string
+           domestic_daily_allowance?: number
+           overseas_daily_allowance?: number
+           transportation_daily_allowance?: number
+           accommodation_daily_allowance?: number
+           misc_daily_allowance?: number
+           is_active?: boolean
+           use_transportation_allowance?: boolean
+           use_accommodation_allowance?: boolean
+           domestic_transportation_daily_allowance?: number
+           domestic_accommodation_daily_allowance?: number
+           overseas_transportation_daily_allowance?: number
+           overseas_accommodation_daily_allowance?: number
+           overseas_preparation_allowance?: number
+           domestic_use_transportation_allowance?: boolean
+           domestic_use_accommodation_allowance?: boolean
+           overseas_use_transportation_allowance?: boolean
+           overseas_use_accommodation_allowance?: boolean
+           overseas_use_preparation_allowance?: boolean
+           created_at?: string
+           updated_at?: string
+         }
+         Update: {
+           id?: string
+           user_id?: string
+           domestic_daily_allowance?: number
+           overseas_daily_allowance?: number
+           transportation_daily_allowance?: number
+           accommodation_daily_allowance?: number
+           misc_daily_allowance?: number
+           is_active?: boolean
+           use_transportation_allowance?: boolean
+           use_accommodation_allowance?: boolean
+           domestic_transportation_daily_allowance?: number
+           domestic_accommodation_daily_allowance?: number
+           overseas_transportation_daily_allowance?: number
+           overseas_accommodation_daily_allowance?: number
+           overseas_preparation_allowance?: number
+           domestic_use_transportation_allowance?: boolean
+           domestic_use_accommodation_allowance?: boolean
+           overseas_use_transportation_allowance?: boolean
+           overseas_use_accommodation_allowance?: boolean
+           overseas_use_preparation_allowance?: boolean
+           created_at?: string
+           updated_at?: string
+         }
+       }
       // 通知設定テーブル
       notification_settings: {
         Row: {
